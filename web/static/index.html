@@ -1,0 +1,2025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Environmental Warfare Classifier</title>
+<meta name="description" content="Burn-scar assessment from Sentinel-2 imagery: segmentation, severity grading, and media corroboration for a location and date.">
+<meta name="theme-color" content="#c4c7c3">
+<!-- Inline so it needs no static route: a mask plate with its burn scar. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23e4e5e0'/%3E%3Crect x='3.5' y='3.5' width='25' height='25' fill='none' stroke='%2316191a'/%3E%3Cpath d='M11 20c-2-3 1-6 4-7 4-1 7 1 7 4 0 3-3 5-6 5s-4-1-5-2Z' fill='%23c0392b'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* ------------------------------------------------------------------ tokens
+     The page is laid out as a map sheet: a neatline border, a titled header
+     carrying the run's coordinates and scene dates, imagery set as numbered
+     plates, and a legend in the margin. --overprint is the only non-data
+     colour on the page (map sheets overprint revisions in purple); every
+     saturated colour below encodes a value and must match what the server
+     actually renders (src/visualization.py, web/app.py). */
+  :root {
+    color-scheme: light;
+    /* Three grounds, far enough apart to read as depth: the desk, the sheet
+       lying on it, and the insets cut into the sheet. */
+    --ground: #c4c7c3;
+    --sheet: #f7f7f5;
+    --plate: #eaebe7;
+    --ink: #14171a;
+    --ink-2: #5a615e;
+    --rule: #d2d5cf;
+    --rule-2: #969c96;
+    --overprint: #7a2e6b;
+    --overprint-soft: rgba(122, 46, 107, 0.1);
+    --overprint-ink: #ffffff;
+
+    /* A scale with real steps in it. The previous version jumped straight from
+       the h1 to 13px, which is what made every answer look like a footnote. */
+    --fs-hero: clamp(4rem, 9vw, 6.5rem);
+    --fs-xl: clamp(1.9rem, 4.2vw, 2.9rem);
+    --fs-lg: 1.4rem;
+    --fs-md: 1.0rem;
+    --fs-sm: 0.875rem;
+    --fs-xs: 0.78rem;
+    --fs-2xs: 0.7rem;
+
+    /* Severity is ordinal (0 none -> 3 maximal), so a sequential ramp. */
+    --sev-0: #969c96;
+    --sev-1: #5c6360;
+    --sev-2: #c07a1e;
+    --sev-3: #b3241c;
+
+    /* Data colours, fixed to the server's own rendering. */
+    --burn: 255, 0, 0;          /* overlay_burn_mask default colour */
+    --gt: 0, 153, 255;          /* app.py ground-truth overlay colour */
+    --overlay-alpha: 0.45;      /* overlay_burn_mask default alpha */
+
+    --font-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: clamp(0.75rem, 3.5vw, 3.25rem);
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  :focus-visible {
+    outline: 2px solid var(--overprint);
+    outline-offset: 2px;
+  }
+
+  /* -------------------------------------------------------------- the sheet
+     Neatline: an outer rule with an inset second rule, and corner ticks that
+     break it, the way a quad sheet's frame does. */
+  .sheet {
+    max-width: 1280px;
+    margin: 0 auto;
+    background: var(--sheet);
+    border: 1px solid var(--rule);
+    position: relative;
+  }
+
+  .band {
+    border-bottom: 1px solid var(--rule);
+    padding: clamp(1rem, 2.2vw, 1.6rem) clamp(1rem, 2.6vw, 2rem);
+  }
+  .band:last-child, .band-flush { border-bottom: none; }
+
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .band-label {
+    margin: 0 0 0.9rem;
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  /* ------------------------------------------------------------ sheet header */
+  .sheet-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1.5rem 2.5rem;
+    align-items: start;
+    padding: clamp(1.2rem, 3vw, 2rem) clamp(1rem, 2.6vw, 2rem);
+    border-bottom: 2px solid var(--rule-2);
+  }
+  .sheet-org {
+    margin: 0 0 0.55rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  h1 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--fs-xl);
+    font-weight: 600;
+    line-height: 1.05;
+    letter-spacing: -0.022em;
+  }
+  .sheet-sub {
+    margin: 0.6rem 0 0;
+    max-width: 46ch;
+    color: var(--ink-2);
+    font-size: 0.92rem;
+  }
+
+  .marks {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 0.28rem 1.1rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--rule);
+    background: var(--plate);
+    font-size: 0.76rem;
+    white-space: nowrap;
+  }
+  .marks dt {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  .marks dd {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* ------------------------------------------------------------- input band */
+  .input-band {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1.5rem 2rem;
+    align-items: end;
+  }
+
+  .tabs { display: flex; gap: 0; margin-bottom: 1.1rem; border-bottom: 1px solid var(--rule); }
+  .tabs button {
+    appearance: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    background: none;
+    padding: 0.45rem 0.9rem;
+    font-family: var(--font-display);
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .tabs button:first-child { padding-left: 0; }
+  .tabs button:hover:not(:disabled) { color: var(--ink); }
+  .tabs button[aria-selected="true"] { color: var(--overprint); border-bottom-color: var(--overprint); }
+  .tabs button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .fields { display: flex; flex-wrap: wrap; gap: 1rem 1.4rem; }
+  .field { display: flex; flex-direction: column; gap: 0.25rem; min-width: 8.5rem; }
+  .field-wide { min-width: min(100%, 26rem); }
+  .field label {
+    font-family: var(--font-display);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  input[type="text"], input[type="number"], textarea {
+    width: 100%;
+    padding: 0.42rem 0.55rem;
+    border: 1px solid var(--rule-2);
+    border-radius: 0;
+    background: var(--plate);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.92rem;
+  }
+  textarea { resize: vertical; line-height: 1.4; }
+  input:focus-visible, textarea:focus-visible { border-color: var(--overprint); }
+  input[aria-invalid="true"] { border-color: var(--sev-3); }
+  .field-error { font-size: 0.74rem; color: var(--sev-3); min-height: 0; }
+  .field-error:empty { display: none; }
+  .field-hint { margin: 0.25rem 0 0; font-size: 0.72rem; color: var(--ink-2); }
+  .output-contract-label { margin-top: 0.6rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; font-size: 0.68rem; }
+  .output-contract {
+    margin: 0.3rem 0 0;
+    padding: 0.5rem 0.65rem;
+    border: 1px dashed var(--rule-2);
+    background: var(--plate);
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  #output_contract { font-size: 0.78rem; }
+  #output_contract:disabled {
+    border-style: dashed;
+    color: var(--ink-2);
+    cursor: not-allowed;
+  }
+
+  /* ---------------------------------------------------------------- keyword tags */
+  .keyword-input-row { display: flex; gap: 0.6rem; align-items: center; }
+  .keyword-input-row input { flex: 1; }
+  .keyword-add {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--rule-2);
+    border-radius: 50%;
+    background: var(--plate);
+    color: var(--overprint);
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .keyword-add:hover:not(:disabled) { border-color: var(--overprint); }
+  .keyword-add:disabled { color: var(--ink-2); cursor: not-allowed; }
+  .keyword-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.7rem; }
+  .keyword-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.4rem 0.28rem 0.75rem;
+    border: 1px solid var(--rule-2);
+    border-radius: 999px;
+    background: var(--plate);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--ink);
+  }
+  .keyword-tag button {
+    appearance: none;
+    flex: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--ink-2);
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .keyword-tag button:hover { background: var(--rule); color: var(--ink); }
+
+  input[type="file"] { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-2); max-width: 26rem; }
+  input[type="file"]::file-selector-button {
+    padding: 0.35rem 0.8rem;
+    margin-right: 0.7rem;
+    border: 1px solid var(--rule-2);
+    border-radius: 0;
+    background: var(--plate);
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+  .file-meta { margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink-2); }
+  .file-meta:empty { display: none; }
+
+  .linkish {
+    appearance: none;
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--overprint);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .linkish:disabled { color: var(--ink-2); text-decoration: none; cursor: not-allowed; }
+  .field-aside { margin-top: 0.7rem; }
+
+  .run-col { display: flex; flex-direction: column; align-items: flex-end; gap: 0.6rem; }
+  /* Ink, not accent. A saturated button is the loudest thing on the page for no
+     reason; the accent is worth more when it only marks state. */
+  #run {
+    padding: 0.7rem 1.8rem;
+    border: 1px solid var(--ink);
+    border-radius: 0;
+    background: var(--ink);
+    color: var(--sheet);
+    font-family: var(--font-display);
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: opacity 0.12s;
+  }
+  #run:hover:not(:disabled) { opacity: 0.82; }
+  #run:disabled { background: transparent; color: var(--ink-2); border-color: var(--rule-2); cursor: progress; }
+
+  #status { display: flex; align-items: center; gap: 0.5rem; font-size: 0.82rem; color: var(--ink-2); }
+  #status:empty { display: none; }
+  .spinner {
+    flex: none;
+    width: 0.85rem;
+    height: 0.85rem;
+    border: 1.5px solid var(--rule-2);
+    border-top-color: var(--overprint);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #alert-slot { grid-column: 1 / -1; }
+  #alert-slot:empty { display: none; }
+  .alert {
+    border: 1px solid var(--sev-3);
+    border-left-width: 3px;
+    background: var(--plate);
+    padding: 0.75rem 0.95rem;
+  }
+  .alert h3 {
+    margin: 0 0 0.35rem;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--sev-3);
+  }
+  .alert p { margin: 0; font-family: var(--font-mono); font-size: 0.82rem; overflow-wrap: anywhere; }
+  .alert .hint { margin-top: 0.45rem; font-family: var(--font-body); font-size: 0.82rem; color: var(--ink-2); }
+
+  /* -------------------------------------------------------------- stage rail
+     The four stages of src/pipeline.py. /api/run is a single blocking POST with
+     no streaming, so per-stage timing is not observable: during a run every node
+     sits in "queued" and one sweep travels the whole connector; the real values
+     land together when the response does. */
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0 1.6rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* Each stage hangs off a shared rule with a marker on it, so the four read as
+     one chain rather than four adjacent columns. */
+  .node { position: relative; padding-top: 1.1rem; border-top: 1px solid var(--rule-2); }
+  .node::before {
+    content: "";
+    position: absolute;
+    top: -4px; left: 0;
+    width: 7px; height: 7px;
+    background: var(--rule-2);
+    transition: background 0.2s;
+  }
+  .node[data-state="done"] { border-top-color: var(--ink); }
+  .node[data-state="done"]::before { background: var(--overprint); }
+
+  .node-head { display: flex; align-items: baseline; gap: 0.55rem; }
+  .node-index { font-family: var(--font-mono); font-size: var(--fs-2xs); color: var(--ink-2); }
+  .node-name {
+    font-family: var(--font-display);
+    font-size: var(--fs-md);
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  /* The answer, then the footnote -- the previous order put the method first and
+     set both at the same size. */
+  .node-value {
+    margin: 0.6rem 0 0.5rem;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--fs-lg);
+    line-height: 1.3;
+    white-space: pre-line;
+    color: var(--ink-2);
+    min-height: 3.6rem;
+  }
+  .node[data-state="done"] .node-value { color: var(--ink); }
+  .node[data-state="idle"] .node-value,
+  .node[data-state="queued"] .node-value { font-size: var(--fs-md); }
+  .node[data-state="skipped"] .node-value { font-style: italic; }
+  .node-method {
+    margin: 0;
+    padding-top: 0.5rem;
+    border-top: 1px dotted var(--rule);
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    line-height: 1.45;
+  }
+
+
+  .rail-sweep { position: relative; height: 1px; background: var(--rule); margin-top: 1rem; overflow: hidden; }
+  .rail-sweep[data-active="true"]::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 22%;
+    background: var(--overprint);
+    animation: sweep 1.5s ease-in-out infinite;
+  }
+  @keyframes sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(560%); } }
+
+  /* ------------------------------------------------------------- body layout */
+  .body-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20.5rem;
+    align-items: start;
+  }
+  .body-grid > .plates-col { border-right: 1px solid var(--rule); }
+
+  /* ------------------------------------------------------------------ plates
+     Column proportions follow scripts/run_pipeline.py's _save_png() gridspec
+     (width_ratios [1.3, 1, 1, 1]): the mask plate spans both period rows and
+     sits a little larger than the index plates. Chips are 256x256 native
+     (gee_client.PATCH_SIZE), so keeping the cells near that width is what
+     keeps them sharp -- a full-width hero plate would be a 3x upscale. */
+  /* The mask has no pre-event counterpart, so keeping it as a matrix column left
+     an empty cell in the pre row. It leads instead, above the period matrix. */
+  .plate-lead {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem 1.4rem;
+    align-items: flex-start;
+    margin-bottom: 1.7rem;
+  }
+  .plate-lead > figure { flex: 0 0 17rem; }
+  .plate-lead-note {
+    flex: 1 1 15rem;
+    align-self: flex-end;
+    max-width: 46ch;
+    padding-bottom: 0.3rem;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .plate-matrix {
+    display: grid;
+    grid-template-columns: 4.6rem repeat(3, 1fr);
+    gap: 0.55rem 0.7rem;
+    align-items: start;
+    max-width: 58rem;
+  }
+  .matrix-col-head, .matrix-row-head {
+    font-family: var(--font-display);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  .matrix-col-head { padding-bottom: 0.2rem; border-bottom: 1px solid var(--rule); }
+  .matrix-row-head { padding-top: 0.4rem; line-height: 1.35; }
+  .matrix-row-head .num { display: block; font-size: 0.72rem; font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+  figure.plate { margin: 0; }
+  .plate-frame {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 7px;
+    border: 1px solid var(--rule-2);
+    background: var(--plate);
+    cursor: zoom-in;
+    appearance: none;
+  }
+  .plate-frame:hover { border-color: var(--overprint); }
+  .plate-frame img { display: block; width: 100%; height: auto; }
+  /* Nearest-neighbour once a chip is drawn above its native pixel grid, so the
+     78 m/px sampling stays visible instead of being smoothed into mush. Applied
+     from JS, which is the only place the natural size is known. */
+  .plate-frame img.is-upscaled { image-rendering: pixelated; }
+  figcaption { margin-top: 0.45rem; }
+  .plate-id {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--ink-2);
+    letter-spacing: 0.02em;
+  }
+  .plate-title {
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .plate-note { font-size: 0.74rem; color: var(--ink-2); line-height: 1.35; }
+  /* In the matrix the column header already names the index, so the plate caption
+     carries only its figure number. Both come back when the headers drop away. */
+  .plate-matrix .plate-note, .plate-matrix .plate-title { display: none; }
+
+  /* -------------------------------------------------------------- empty state */
+  .empty { padding: 2.5rem 0 3rem; max-width: 52ch; }
+  .empty p { margin: 0; }
+  .empty-note { margin-top: 0.5rem; color: var(--ink-2); font-size: var(--fs-sm); line-height: 1.6; }
+
+  /* ------------------------------------------------------------------ margin */
+  .margin-block { padding: clamp(1rem, 2.2vw, 1.6rem) clamp(1rem, 2.6vw, 1.6rem); border-bottom: 1px solid var(--rule); }
+  .margin-block:last-child { border-bottom: none; }
+
+  .colorbar {
+    height: 0.85rem;
+    border: 1px solid var(--rule-2);
+    /* matplotlib RdYlGn, the cmap app.py passes for every index plate */
+    background: linear-gradient(90deg, #a50026, #f46d43, #fee08b, #ffffbf, #a6d96a, #66bd63, #006837);
+  }
+  .colorbar-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 0.2rem;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.7rem;
+    color: var(--ink-2);
+  }
+  .legend-key { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.55rem; font-size: 0.78rem; }
+  .swatch { flex: none; width: 1.5rem; height: 0.85rem; border: 1px solid var(--rule-2); background: var(--plate); }
+  /* The same blend overlay_burn_mask() produces: the data colour at 45% over the plate. */
+  .swatch-burn { background: linear-gradient(rgba(var(--burn), var(--overlay-alpha)), rgba(var(--burn), var(--overlay-alpha))), var(--plate); }
+  .swatch-gt { background: linear-gradient(rgba(var(--gt), var(--overlay-alpha)), rgba(var(--gt), var(--overlay-alpha))), var(--plate); }
+  .legend-sub { margin: 0.15rem 0 0.7rem; font-size: 0.72rem; color: var(--ink-2); }
+  .formulas { margin: 0.9rem 0 0; padding-top: 0.7rem; border-top: 1px solid var(--rule); font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-2); line-height: 1.8; }
+  .formulas div { white-space: nowrap; overflow-x: auto; }
+
+  /* ----------------------------------------------------------------- verdict
+     The one thing the product exists to produce, so it gets the page's only
+     hero-scale type and a full-width band of its own. */
+  .verdict-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 1fr);
+    gap: 2.2rem;
+    align-items: start;
+  }
+  .verdict-grid > * + * { padding-left: 2.2rem; border-left: 1px solid var(--rule); }
+  .verdict-main { display: flex; align-items: baseline; gap: 1.1rem; }
+  .verdict-num {
+    font-family: var(--font-display);
+    font-size: var(--fs-hero);
+    font-weight: 700;
+    line-height: 0.78;
+    letter-spacing: -0.01em;
+  }
+  .verdict-label {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.3rem, 2.6vw, 1.9rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+  .verdict-scale { margin: 0.45rem 0 0; font-size: var(--fs-xs); color: var(--ink-2); }
+
+  .stat-name {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--fs-2xs);
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  .stat-big {
+    margin: 0.35rem 0 0.2rem;
+    font-size: clamp(2rem, 4vw, 2.9rem);
+    line-height: 1;
+  }
+  .stat-note { margin: 0.4rem 0 0; font-size: var(--fs-xs); color: var(--ink-2); }
+  #proba { margin-top: 0.6rem; }
+
+  [data-sev="0"] { color: var(--sev-0); }
+  [data-sev="1"] { color: var(--sev-1); }
+  [data-sev="2"] { color: var(--sev-2); }
+  [data-sev="3"] { color: var(--sev-3); }
+
+  .proba { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.3rem 0.5rem; align-items: center; font-size: 0.76rem; }
+  .proba-key { font-family: var(--font-display); font-weight: 500; color: var(--ink-2); }
+  .proba-track { height: 0.6rem; background: var(--plate); border: 1px solid var(--rule); }
+  .proba-fill { height: 100%; background: currentColor; }
+  .proba-val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  .proba-row-active .proba-key, .proba-row-active .proba-val { color: var(--ink); }
+  .axis-note { margin: 0.5rem 0 0; font-size: 0.7rem; color: var(--ink-2); }
+
+  .metrics { margin: 1.2rem 0 0; padding-top: 0.9rem; border-top: 1px solid var(--rule); }
+  .metrics-flush { margin-top: 0; padding-top: 0; border-top: none; }
+  .metric { padding: 0.5rem 0; border-bottom: 1px dotted var(--rule); }
+  .metric:last-child { border-bottom: none; }
+  .metric-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; }
+  .metric-name { font-family: var(--font-display); font-size: var(--fs-xs); font-weight: 500; color: var(--ink-2); }
+  .metric-val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  .metric-read { margin-top: 0.15rem; font-size: 0.74rem; color: var(--ink-2); line-height: 1.4; }
+  .metric-read .num { font-size: 0.74rem; }
+
+  .provenance { font-size: 0.75rem; color: var(--ink-2); line-height: 1.55; }
+  .provenance b {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--ink);
+  }
+  .provenance .num { font-size: 0.73rem; color: var(--ink); }
+  .provenance p { margin: 0 0 0.6rem; }
+  .provenance p:last-child { margin-bottom: 0; }
+  .provenance a { color: var(--overprint); }
+
+  /* ------------------------------------------------------------- attribution */
+  .attr-note { margin: 0 0 0.9rem; max-width: 70ch; }
+  .attr-bar { display: flex; height: 0.7rem; border: 1px solid var(--rule-2); max-width: 26rem; }
+  .attr-bar span { display: block; height: 100%; }
+  .attr-yes { background: var(--overprint); }
+  .attr-no { background: var(--plate); }
+  .attr-counts { display: flex; gap: 1.4rem; margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
+
+  .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.5rem; margin-top: 1.4rem; }
+  .articles-wrap { overflow-x: auto; margin-top: 1.4rem; }
+  .articles-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .articles-table caption {
+    caption-side: top;
+    text-align: left;
+    padding-bottom: 0.5rem;
+    font-family: var(--font-display);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+  .articles-table th, .articles-table td { padding: 0.45rem 0.6rem 0.45rem 0; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+  .articles-table th { font-family: var(--font-display); font-size: var(--fs-xs); font-weight: 500; color: var(--ink-2); border-bottom-color: var(--rule-2); }
+  .articles-table td:last-child { padding-right: 0; }
+  .articles-table a { color: var(--overprint); font-family: var(--font-mono); font-size: 0.74rem; }
+  .articles-table td.evidence-quote { white-space: normal; overflow-wrap: anywhere; color: var(--ink-2); font-style: italic; }
+  .articles-table td.article-num { font-family: var(--font-mono); color: var(--ink-2); white-space: nowrap; }
+  .structured-table { table-layout: fixed; min-width: 56rem; }
+  /* Headers and the short, known-vocabulary value cells (yes/no/unclear/high/...) must never
+     wrap — nowrap keeps them on one line; if a column is ever too narrow for that, the table
+     (not the word) overflows and .articles-wrap's horizontal scroll kicks in, which reads far
+     better than a label wrapping mid-word. Actor/evidence-quote are free text and still wrap. */
+  .structured-table th, .structured-table td.value-cell { white-space: nowrap; }
+  .structured-table td.actor-cell { white-space: normal; overflow-wrap: anywhere; }
+  .articles-table tbody tr:target { background: var(--overprint-soft); scroll-margin-top: 1.5rem; }
+  .article-ref {
+    display: inline-block;
+    color: var(--overprint);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    text-decoration: none;
+    border: 1px solid var(--rule-2);
+    padding: 0.05rem 0.4rem;
+  }
+  .article-ref:hover { background: var(--overprint-soft); }
+  .results-block { font-size: 0.82rem; }
+  .article-refs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; }
+
+  /* --------------------------------------------------------------- raw report */
+  details.raw { border-top: 1px solid var(--rule); }
+  details.raw > summary {
+    padding: 0.9rem clamp(1rem, 2.6vw, 2rem);
+    font-family: var(--font-display);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  details.raw > summary:hover { color: var(--ink); }
+  .raw-body { padding: 0 clamp(1rem, 2.6vw, 2rem) 1.4rem; }
+  #summary {
+    margin: 0 0 0.8rem;
+    white-space: pre-wrap;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    line-height: 1.65;
+    background: var(--plate);
+    border: 1px solid var(--rule);
+    padding: 0.9rem 1rem;
+  }
+
+
+  /* ---------------------------------------------------------------- lightbox */
+  dialog {
+    max-width: min(94vw, 900px);
+    max-height: 92vh;
+    padding: 0;
+    border: 1px solid var(--rule-2);
+    background: var(--sheet);
+    color: var(--ink);
+  }
+  dialog::backdrop { background: rgba(10, 12, 12, 0.72); }
+  .lightbox-body { padding: 1rem; }
+  /* A zoom is meant to magnify, so it magnifies the real pixel grid. */
+  .lightbox-body img {
+    display: block;
+    width: min(100%, 70vh);
+    height: auto;
+    margin: 0 auto;
+    border: 1px solid var(--rule-2);
+    background: var(--plate);
+    image-rendering: pixelated;
+  }
+  .lightbox-bar { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 0.7rem 1rem; border-top: 1px solid var(--rule); }
+  .lightbox-bar p { margin: 0; font-size: 0.8rem; color: var(--ink-2); }
+  .lightbox-bar strong { font-family: var(--font-display); font-weight: 600; color: var(--ink); }
+
+  /* ------------------------------------------------------------- responsive */
+  @media (max-width: 1040px) {
+    .body-grid { grid-template-columns: minmax(0, 1fr); }
+    .body-grid > .plates-col { border-right: none; border-bottom: 1px solid var(--rule); }
+  }
+  @media (max-width: 900px) {
+    /* Three columns of verdict do not survive a narrow viewport: the percentage
+       ran under the divider and the probability bars became stubs. */
+    .verdict-grid { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+    .verdict-grid > * + * {
+      padding-left: 0;
+      padding-top: 1.5rem;
+      border-left: none;
+      border-top: 1px solid var(--rule);
+    }
+  }
+  @media (max-width: 860px) {
+    .sheet-head { grid-template-columns: minmax(0, 1fr); }
+    .marks { justify-self: start; }
+    .input-band { grid-template-columns: minmax(0, 1fr); }
+    .run-col { align-items: flex-start; }
+    .rail { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.2rem 0; }
+    .node:nth-child(odd) { padding-left: 0; border-left: none; }
+  }
+  @media (max-width: 560px) {
+    .rail { grid-template-columns: minmax(0, 1fr); }
+    .node { padding: 0 0 0.9rem; border-left: none !important; border-bottom: 1px solid var(--rule); }
+    .node:last-child { border-bottom: none; }
+    .node-value { min-height: 0; }
+    .plate-matrix { grid-template-columns: minmax(0, 1fr); }
+    .plate-lead > figure { flex: 1 1 100%; }
+    .matrix-col-head { display: none; }
+    .plate-matrix .plate-note, .plate-matrix .plate-title { display: block; }
+    .matrix-row-head { padding-top: 0.9rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* animation-delay too, or a staggered reveal holds its from-state (opacity 0)
+       for the length of the delay before snapping in. */
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-delay: 0s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<main class="sheet">
+
+  <header class="sheet-head">
+    <div>
+      <p class="sheet-org">Satellite burn-scar assessment</p>
+      <h1>Environmental Warfare Classifier</h1>
+      <p class="sheet-sub">Retrieves pre- and post-event satellite imagery for a location and date,
+      segments the burn scar, grades its severity, and checks the date against news coverage.</p>
+    </div>
+    <dl class="marks">
+      <dt>Source</dt><dd id="mark-source">&mdash;</dd>
+      <dt>Coordinates</dt><dd id="mark-coord">&mdash;</dd>
+      <dt>Event date</dt><dd id="mark-event">&mdash;</dd>
+      <dt>Pre-event scene</dt><dd id="mark-pre">&mdash;</dd>
+      <dt>Post-event scene</dt><dd id="mark-post">&mdash;</dd>
+      <dt>Issued</dt><dd id="mark-issued">&mdash;</dd>
+    </dl>
+  </header>
+
+  <section class="band input-band">
+    <div>
+      <h2 class="band-label">Input</h2>
+      <div class="tabs" role="tablist" aria-label="Input mode">
+        <button type="button" id="tab-gee" role="tab" aria-selected="true" aria-controls="panel-gee" tabindex="0">Lat/lon + date</button>
+        <button type="button" id="tab-local" role="tab" aria-selected="false" aria-controls="panel-local" tabindex="-1">Local scene</button>
+      </div>
+
+      <div id="panel-gee" class="panel" role="tabpanel" aria-labelledby="tab-gee">
+        <div class="fields">
+          <div class="field">
+            <label for="lat">Latitude</label>
+            <input id="lat" type="number" step="any" value="46.6934" inputmode="decimal">
+            <p class="field-error" id="err-lat"></p>
+          </div>
+          <div class="field">
+            <label for="lon">Longitude</label>
+            <input id="lon" type="number" step="any" value="41.7838" inputmode="decimal">
+            <p class="field-error" id="err-lon"></p>
+          </div>
+          <div class="field">
+            <label for="event_date">Event date</label>
+            <input id="event_date" type="text" value="2024-08-18" placeholder="YYYY-MM-DD" spellcheck="false">
+            <p class="field-error" id="err-date"></p>
+          </div>
+        </div>
+        <p class="field-aside"><button type="button" class="linkish" id="reset-sample">Restore the sample coordinates</button></p>
+
+        <div class="fields" style="margin-top: 1rem;">
+          <div class="field field-wide">
+            <label for="keyword-input">Attribution search keywords</label>
+            <div class="keyword-input-row">
+              <input id="keyword-input" type="text" spellcheck="false" placeholder="Add your keywords">
+              <button type="button" class="keyword-add" id="keyword-add" aria-label="Add keyword">+</button>
+            </div>
+            <div class="keyword-tags" id="keyword-tags"></div>
+          </div>
+        </div>
+        <div class="fields" style="margin-top: 1rem;">
+          <div class="field field-wide">
+            <label for="news_radius_km">Attribution search radius &mdash; km</label>
+            <input id="news_radius_km" type="number" min="1" max="2000" step="1" placeholder="10">
+            <p class="field-hint">World News geotags articles to a place, so this is a hard filter
+              on an already-sparse index. Over sparsely-reported rural areas the default finds
+              nothing even when coverage exists further out &mdash; widen it before reading a zero
+              as evidence.</p>
+          </div>
+        </div>
+        <div class="fields" style="margin-top: 1rem;">
+          <div class="field field-wide">
+            <label for="attribution_mode">Attribution classification mode</label>
+            <select id="attribution_mode">
+              <option value="yes_no">Yes/No — aggregate score</option>
+              <option value="structured">Structured — per-article JSON fields</option>
+            </select>
+            <p class="field-hint" id="attribution-mode-hint">Asks Gemini a single yes/no per article, aggregated into a supporting/opposing score.</p>
+          </div>
+        </div>
+        <div class="fields" style="margin-top: 1rem;">
+          <div class="field field-wide">
+            <label for="domain_prompt">Attribution classifier prompt — domain definition</label>
+            <textarea id="domain_prompt" rows="6" spellcheck="false" placeholder="Loading default…"></textarea>
+            <p class="field-hint" id="domain-prompt-hint">Sent to Gemini as the system instruction for each article — defines what counts as evidence of conflict or military activity.</p>
+          </div>
+        </div>
+        <div class="fields" style="margin-top: 1rem;">
+          <div class="field field-wide">
+            <label for="output_contract" id="output-contract-field-label">Attribution output contract</label>
+            <textarea id="output_contract" rows="4" spellcheck="false" placeholder="Loading default…" disabled></textarea>
+            <p class="field-hint" id="output-contract-hint"></p>
+            <p class="field-hint output-contract-label" id="format-instruction-label" hidden>Always appended, fixed:</p>
+            <p class="output-contract" id="format-instruction" hidden>Loading…</p>
+          </div>
+        </div>
+        <p class="field-aside"><button type="button" class="linkish" id="reset-attribution">Restore default keywords and prompt</button></p>
+      </div>
+
+      <div id="panel-local" class="panel" role="tabpanel" aria-labelledby="tab-local" hidden>
+        <div class="field field-wide">
+          <label for="file">HLS scene &mdash; six-band *_merged.tif</label>
+          <input id="file" type="file" accept=".tif,.tiff">
+          <p class="file-meta" id="file-meta"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="run-col">
+      <button type="button" id="run">Run pipeline</button>
+      <div id="status" role="status" aria-live="polite"></div>
+    </div>
+
+    <div id="alert-slot"></div>
+  </section>
+
+  <section class="band">
+    <h2 class="band-label">Pipeline</h2>
+    <ol class="rail" id="rail">
+      <li class="node" data-state="idle" data-stage="retrieval">
+        <div class="node-head">
+          <span class="node-index num">01</span>
+          <span class="node-name">Retrieval</span>
+        </div>
+        <p class="node-value" data-slot="retrieval">Awaiting run</p>
+        <p class="node-method">Sentinel-2 via Earth Engine, 30 days before and 21 days after the event &mdash; or a local HLS scene.</p>
+      </li>
+      <li class="node" data-state="idle" data-stage="segmentation">
+        <div class="node-head">
+          <span class="node-index num">02</span>
+          <span class="node-name">Segmentation</span>
+        </div>
+        <p class="node-value" data-slot="segmentation">Awaiting run</p>
+        <p class="node-method">BurnScarSegmenter U-Net over the six reflectance bands, thresholded at 0.50.</p>
+      </li>
+      <li class="node" data-state="idle" data-stage="severity">
+        <div class="node-head">
+          <span class="node-index num">03</span>
+          <span class="node-name">Severity</span>
+        </div>
+        <p class="node-value" data-slot="severity">Awaiting run</p>
+        <p class="node-method">Classifier over NDVI and NBR statistics inside the predicted mask.</p>
+      </li>
+      <li class="node" data-state="idle" data-stage="attribution">
+        <div class="node-head">
+          <span class="node-index num">04</span>
+          <span class="node-name">Attribution</span>
+        </div>
+        <p class="node-value" data-slot="attribution">Awaiting run</p>
+        <p class="node-method">News search near the coordinates, then a per-article verdict from Gemini.</p>
+      </li>
+    </ol>
+    <div class="rail-sweep" id="rail-sweep" data-active="false" aria-hidden="true"></div>
+  </section>
+
+  <section class="band verdict" id="verdict-band" hidden>
+    <h2 class="sr-only">Assessment</h2>
+    <div class="verdict-grid">
+      <div class="verdict-main">
+        <span class="verdict-num" id="verdict-num">&mdash;</span>
+        <div>
+          <p class="verdict-label" id="verdict-label"></p>
+          <p class="verdict-scale">Graded 0 none, 1 minimal, 2 moderate, 3 maximal.</p>
+        </div>
+      </div>
+      <div class="verdict-cell">
+        <p class="stat-name">Burn-affected area</p>
+        <p class="stat-big num" id="verdict-area">&mdash;</p>
+        <p class="stat-note">of the assessed patch</p>
+      </div>
+      <div class="verdict-cell">
+        <p class="stat-name">Class probability</p>
+        <div id="proba"></div>
+        <p class="stat-note">0 to 1, across the three grades.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="body-grid">
+    <div class="plates-col">
+      <section class="band band-flush">
+        <!-- The figures label themselves, so this heading is for screen readers only. -->
+        <h2 class="sr-only">Plates</h2>
+
+        <div id="empty-state" class="empty">
+          <p>No results yet.</p>
+          <p class="empty-note">Enter a latitude, longitude and event date, or upload a six-band
+          HLS scene, then run the pipeline. Imagery, the predicted mask and the measurements
+          appear here.</p>
+        </div>
+
+        <div id="plates" hidden></div>
+      </section>
+
+      <section class="band band-flush" id="attr-section" hidden>
+        <h2 class="band-label">Attribution</h2>
+        <div id="attribution"></div>
+      </section>
+    </div>
+
+    <aside>
+      <section class="margin-block">
+        <h2 class="band-label">Legend</h2>
+        <div class="colorbar" role="img" aria-label="Index colour scale from minus one, dark red, through zero, pale yellow, to plus one, dark green."></div>
+        <div class="colorbar-scale"><span>&minus;1</span><span>0</span><span>+1</span></div>
+        <p class="legend-sub">NDVI and NBR plates, fixed scale.</p>
+        <div class="legend-key"><span class="swatch swatch-burn"></span><span>Predicted burn</span></div>
+        <p class="legend-sub">Model output at 45% over post-event colour.</p>
+        <div class="legend-key"><span class="swatch swatch-gt"></span><span>Ground truth</span></div>
+        <p class="legend-sub">Labelled extent, local dataset samples only.</p>
+        <div class="formulas">
+          <div>NDVI = (NIR &minus; Red) / (NIR + Red)</div>
+          <div>NBR&nbsp; = (NIR &minus; SWIR2) / (NIR + SWIR2)</div>
+        </div>
+      </section>
+
+      <section class="margin-block" id="findings-block" hidden>
+        <h2 class="band-label">Measurements</h2>
+        <div id="findings"></div>
+      </section>
+
+      <section class="margin-block provenance">
+        <h2 class="band-label">Specification</h2>
+        <p><b>Imagery</b> &mdash; Sentinel-2 surface reflectance, cloud-masked, sampled over a
+        20&nbsp;km box at <span class="num">78&nbsp;m</span> per pixel, <span class="num">256&nbsp;&times;&nbsp;256</span> per scene.</p>
+        <p><b>Segmentation</b> &mdash; 56.6M-parameter U-Net over six reflectance bands.
+        IoU <span class="num">0.803</span> on held-out validation; the 324M-parameter
+        Prithvi-EO-2.0 baseline scores <span class="num">0.813</span> on the same chips.</p>
+        <p><b>Severity</b> &mdash; graded 1 minimal/none, 2 moderate, 3 maximal from NDVI and NBR
+        statistics inside the mask. Post-event imagery only.</p>
+        <p><b>Attribution</b> &mdash; weighs media evidence alone. It is not a forensic or legal finding.</p>
+      </section>
+    </aside>
+  </div>
+
+  <details class="raw" id="raw-report" hidden>
+    <summary>Plain-text report</summary>
+    <div class="raw-body">
+      <pre id="summary"></pre>
+      <button type="button" class="linkish" id="copy-report">Copy report</button>
+    </div>
+  </details>
+
+</main>
+
+<dialog id="lightbox">
+  <div class="lightbox-body"><img id="lightbox-img" alt=""></div>
+  <div class="lightbox-bar">
+    <p><strong id="lightbox-title"></strong> <span id="lightbox-note"></span></p>
+    <button type="button" class="linkish" id="lightbox-close">Close</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+const EM_DASH = "—";
+const MINUS = "−";
+
+/* Plate captions. Keys are the image keys web/app.py's _build_images() returns. */
+const PLATE_INFO = {
+  post_mask_overlay: { title: "Predicted burn mask", note: "U-Net output above 0.50, overlaid on post-event colour." },
+  ground_truth_overlay: { title: "Ground truth", note: "Labelled burn extent from the HLS dataset." },
+  pre_rgb: { title: "RGB", note: "True colour, 2–98% stretch." },
+  pre_ndvi: { title: "NDVI", note: "Vegetation vigour; falls where vegetation is lost." },
+  pre_nbr: { title: "NBR", note: "Burn ratio; falls sharply over burn scars." },
+  post_rgb: { title: "RGB", note: "True colour, 2–98% stretch." },
+  post_ndvi: { title: "NDVI", note: "Vegetation vigour; falls where vegetation is lost." },
+  post_nbr: { title: "NBR", note: "Burn ratio; falls sharply over burn scars." },
+};
+
+const SAMPLE = { lat: "46.6934", lon: "41.7838", event_date: "2024-08-18" };
+
+/* Populated from GET /api/config on load, so the defaults shown/edited here always
+   match what src/attribution/worldnews_client.py and gemini_client.py actually use —
+   no duplicated copies to drift out of sync. */
+let attributionDefaults = null;
+
+/* Keywords are edited as individual tags; joined with " OR " (worldnews_client's own
+   query syntax) only when building the request. */
+let keywordTags = [];
+
+function renderKeywordTags() {
+  const container = $("keyword-tags");
+  container.textContent = "";
+  for (const tag of keywordTags) {
+    const chip = el("span", "keyword-tag");
+    chip.appendChild(document.createTextNode(tag));
+    const removeBtn = el("button", null, "×");
+    removeBtn.type = "button";
+    removeBtn.setAttribute("aria-label", `Remove keyword "${tag}"`);
+    removeBtn.addEventListener("click", () => {
+      keywordTags = keywordTags.filter((t) => t !== tag);
+      renderKeywordTags();
+    });
+    chip.appendChild(removeBtn);
+    container.appendChild(chip);
+  }
+}
+
+function addKeywordsFromInput() {
+  const input = $("keyword-input");
+  for (const term of input.value.split(",")) {
+    const trimmed = term.trim();
+    if (trimmed && !keywordTags.includes(trimmed)) keywordTags.push(trimmed);
+  }
+  input.value = "";
+  renderKeywordTags();
+}
+
+const ATTRIBUTION_MODE_HINTS = {
+  yes_no: {
+    domainPrompt: "Sent to Gemini as the system instruction for each article — defines what counts as evidence of conflict or military activity.",
+    outputContractFieldLabel: "Attribution output contract — fixed",
+    outputContractHint: "Always appended, fixed — the model must answer with exactly this format.",
+    mode: "Asks Gemini a single yes/no per article, aggregated into a supporting/opposing score.",
+  },
+  structured: {
+    domainPrompt: "Sent to Gemini as the system instruction for each article — defines what counts as deliberate, conflict-directed environmental destruction, how to read the article, and how to default unrelated/insufficient-evidence articles.",
+    outputContractFieldLabel: "Attribution output contract — JSON fields",
+    outputContractHint: "Just the JSON object's field formatting — editable.",
+    mode: "Asks Gemini for a per-article JSON verdict (conflict activity, environmental destruction, deliberateness, actor, evidence quote, confidence).",
+  },
+};
+
+let currentAttributionMode = "yes_no";
+
+function applyAttributionModeDefaults(mode) {
+  if (!attributionDefaults) return;
+  const defaults = attributionDefaults.modes[mode];
+  $("domain_prompt").value = defaults.domain_prompt;
+  $("output_contract").value = defaults.output_contract;
+  $("output_contract").disabled = mode !== "structured";
+  const hints = ATTRIBUTION_MODE_HINTS[mode];
+  $("domain-prompt-hint").textContent = hints.domainPrompt;
+  $("output-contract-field-label").textContent = hints.outputContractFieldLabel;
+  $("output-contract-hint").textContent = hints.outputContractHint;
+  $("attribution-mode-hint").textContent = hints.mode;
+
+  const formatInstruction = defaults.format_instruction;
+  $("format-instruction-label").hidden = !formatInstruction;
+  $("format-instruction").hidden = !formatInstruction;
+  if (formatInstruction) $("format-instruction").textContent = formatInstruction;
+}
+
+async function loadAttributionDefaults() {
+  try {
+    const response = await fetch("/api/config");
+    if (!response.ok) return;
+    attributionDefaults = await response.json();
+    keywordTags = attributionDefaults.keywords.split(" OR ").map((t) => t.trim()).filter(Boolean);
+    renderKeywordTags();
+    $("domain_prompt").placeholder = "";
+    $("output_contract").placeholder = "";
+    $("news_radius_km").placeholder = String(attributionDefaults.news_radius_km);
+    applyAttributionModeDefaults(currentAttributionMode);
+  } catch {
+    /* Left blank; the server falls back to its own defaults when these are omitted. */
+  }
+}
+
+let activeTab = "gee";
+let hasRun = false;
+let runCount = 0;
+let timerId = null;
+
+/* ------------------------------------------------------------------ helpers */
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function $(id) { return document.getElementById(id); }
+
+/** Render a number with a typographic minus so it lines up in tabular mono. */
+function num(value, digits) {
+  return value.toFixed(digits).replace("-", MINUS);
+}
+
+function signed(value, digits) {
+  const s = value.toFixed(digits).replace("-", MINUS);
+  return value > 0 ? "+" + s : s;
+}
+
+function formatCoords(lat, lon) {
+  const ns = lat >= 0 ? "N" : "S";
+  const ew = lon >= 0 ? "E" : "W";
+  return `${Math.abs(lat).toFixed(4)}°${ns}  ${Math.abs(lon).toFixed(4)}°${ew}`;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+/* Only http/https URLs from the news API are ever turned into links. */
+function safeHref(url) {
+  try {
+    const parsed = new URL(url, window.location.href);
+    return (parsed.protocol === "http:" || parsed.protocol === "https:") ? parsed.href : "#";
+  } catch {
+    return "#";
+  }
+}
+
+/* --------------------------------------------------------------------- tabs */
+
+const TAB_IDS = ["gee", "local"];
+
+function selectTab(tab, focus) {
+  activeTab = tab;
+  for (const id of TAB_IDS) {
+    const selected = id === tab;
+    const button = $("tab-" + id);
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    $("panel-" + id).hidden = !selected;
+  }
+  if (focus) $("tab-" + tab).focus();
+  if (!hasRun) syncMarksFromInputs();
+}
+
+function setupTabs() {
+  for (const id of TAB_IDS) {
+    const button = $("tab-" + id);
+    button.addEventListener("click", () => selectTab(id, false));
+    button.addEventListener("keydown", (event) => {
+      const index = TAB_IDS.indexOf(id);
+      let next = null;
+      if (event.key === "ArrowRight") next = TAB_IDS[(index + 1) % TAB_IDS.length];
+      else if (event.key === "ArrowLeft") next = TAB_IDS[(index - 1 + TAB_IDS.length) % TAB_IDS.length];
+      else if (event.key === "Home") next = TAB_IDS[0];
+      else if (event.key === "End") next = TAB_IDS[TAB_IDS.length - 1];
+      if (next) { event.preventDefault(); selectTab(next, true); }
+    });
+  }
+}
+
+/* --------------------------------------------------------------- sheet marks */
+
+function setMark(id, value) {
+  $(id).textContent = value || EM_DASH;
+}
+
+/** Before the first run the header tracks what is about to be assessed. */
+function syncMarksFromInputs() {
+  if (activeTab === "local") {
+    const file = $("file").files[0];
+    setMark("mark-source", "Local HLS scene");
+    setMark("mark-coord", null);
+    setMark("mark-event", null);
+    setMark("mark-post", file ? file.name : null);
+    setMark("mark-pre", null);
+    return;
+  }
+  const lat = parseFloat($("lat").value);
+  const lon = parseFloat($("lon").value);
+  setMark("mark-source", "Sentinel-2 · Earth Engine");
+  setMark("mark-coord", Number.isFinite(lat) && Number.isFinite(lon) ? formatCoords(lat, lon) : null);
+  setMark("mark-event", $("event_date").value.trim() || null);
+  setMark("mark-pre", null);
+  setMark("mark-post", null);
+}
+
+function setMarksFromResult(data) {
+  setMark("mark-issued", new Date().toLocaleString(undefined, {
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }));
+
+  if (data.mode === "gee") {
+    setMark("mark-source", "Sentinel-2 · Earth Engine");
+    setMark("mark-coord", formatCoords(data.input.lat, data.input.lon));
+    setMark("mark-event", data.input.event_date);
+    setMark("mark-pre", data.pre && data.pre.date);
+    setMark("mark-post", data.post && data.post.date);
+  } else {
+    const path = String(data.input.local_tif || "");
+    setMark("mark-source", "Local HLS scene");
+    setMark("mark-coord", null);
+    setMark("mark-event", null);
+    setMark("mark-pre", null);
+    /* read_local_scene() carries no acquisition date, so there is none to show. */
+    setMark("mark-post", path.split("/").pop() || null);
+  }
+}
+
+/* ---------------------------------------------------------------- stage rail */
+
+function setRailRunning() {
+  $("rail-sweep").dataset.active = "true";
+  for (const node of document.querySelectorAll(".node")) {
+    node.dataset.state = "queued";
+    node.querySelector(".node-value").textContent = "Queued…";
+  }
+}
+
+function setRailIdle() {
+  $("rail-sweep").dataset.active = "false";
+  for (const node of document.querySelectorAll(".node")) {
+    node.dataset.state = "idle";
+    node.querySelector(".node-value").textContent = "Awaiting run";
+  }
+}
+
+/** " +2" when a mosaic composites more than one acquisition — get_sentinel_patch mosaics every
+    scene in the window and reports only the least-cloudy one's date, so a bare date overstates
+    how precisely the imagery is dated. */
+function sceneSuffix(period) {
+  const extra = (period.scenes || []).length - 1;
+  return extra > 0 ? ` +${extra}` : "";
+}
+
+function fillRail(data) {
+  $("rail-sweep").dataset.active = "false";
+  const attribution = data.attribution;
+  const values = {
+    retrieval: data.mode === "gee"
+      ? `pre ${data.pre.date}${sceneSuffix(data.pre)}\npost ${data.post.date}${sceneSuffix(data.post)}`
+      : "local scene\nsingle post-event pass",
+    segmentation: `${num(data.stats.burned_fraction * 100, 1)}% of patch\nburn-affected`,
+    severity: data.severity_basis === "empty_mask"
+      ? "not assessed\nempty mask"
+      : `level ${data.severity}\n${data.severity_label}`,
+    attribution: attribution.status === "skipped"
+      ? "skipped\nno location or date"
+      : attribution.status === "unavailable"
+        ? "unavailable\nnews search failed"
+        : (attribution.num_articles === 0
+          ? "no articles found"
+          : `${attribution.yes_list.length} of ${attribution.num_articles}\narticles support`),
+  };
+  const attributionNotRun = attribution.status === "skipped" || attribution.status === "unavailable";
+  document.querySelectorAll(".node").forEach((node, index) => {
+    const stage = node.dataset.stage;
+    node.dataset.state = (stage === "attribution" && attributionNotRun) ? "skipped" : "done";
+    const slot = node.querySelector(".node-value");
+    slot.textContent = values[stage];
+  });
+}
+
+/* -------------------------------------------------------------------- plates
+   The two layouts mirror scripts/run_pipeline.py's _save_png(): GEE mode puts
+   the predicted mask alongside a pre/post x RGB/NDVI/NBR matrix; local mode has
+   no pre-event pass, so it is a single post-event row. Keep them in sync. */
+
+let plateCounter = 0;
+const plateImages = [];
+
+/** Chips are small (256px for Earth Engine, 512 for HLS). Draw them smoothed while
+ *  they fit inside their native grid, and switch to nearest-neighbour rather than
+ *  interpolating detail that was never sampled. */
+function markUpscale(img) {
+  if (!img.naturalWidth) return;
+  img.classList.toggle("is-upscaled", img.clientWidth > img.naturalWidth * 1.15);
+}
+
+function refreshUpscaleFlags() {
+  for (const img of plateImages) markUpscale(img);
+}
+
+function buildPlate(key, b64, options) {
+  const info = PLATE_INFO[key] || { title: key, note: "" };
+  const id = "fig. " + (++plateCounter);
+  const figure = el("figure", "plate");
+
+  const frame = el("button", "plate-frame");
+  frame.type = "button";
+  const img = el("img");
+  img.src = "data:image/png;base64," + b64;
+  img.alt = info.title + (options && options.period ? ", " + options.period : "");
+  img.addEventListener("load", () => markUpscale(img), { once: true });
+  plateImages.push(img);
+  frame.appendChild(img);
+  frame.addEventListener("click", () => openLightbox(img, id + " " + EM_DASH + " " + info.title, info.note));
+  figure.appendChild(frame);
+
+  const caption = el("figcaption");
+  caption.appendChild(el("div", "plate-id", id));
+  caption.appendChild(el("div", "plate-title", info.title));
+  if (info.note) caption.appendChild(el("div", "plate-note", info.note));
+  figure.appendChild(caption);
+  return figure;
+}
+
+/* One grid holding every plate, laid out like _save_png()'s gridspec: the mask
+   plate spans the period rows on the left, then RGB / NDVI / NBR by column. */
+function renderPlates(data) {
+  plateCounter = 0;
+  plateImages.length = 0;
+  const container = $("plates");
+  container.textContent = "";
+  const images = data.images;
+
+  const rows = data.mode === "gee"
+    ? [
+        { prefix: "pre", label: "Pre", date: data.pre && data.pre.date },
+        { prefix: "post", label: "Post", date: data.post && data.post.date },
+      ]
+    : [{ prefix: "post", label: "Scene", date: (data.post && data.post.date) || null }];
+
+  /* The model's own output leads, since it is what the reader came for. */
+  const lead = el("div", "plate-lead");
+  if ("post_mask_overlay" in images) lead.appendChild(buildPlate("post_mask_overlay", images.post_mask_overlay));
+  if ("ground_truth_overlay" in images) lead.appendChild(buildPlate("ground_truth_overlay", images.ground_truth_overlay));
+  lead.appendChild(el("p", "plate-lead-note",
+    "Red marks every pixel the segmenter scored above 0.50, drawn over the post-event scene. "
+    + "The plates below are the imagery it read."));
+  container.appendChild(lead);
+
+  const grid = el("div", "plate-matrix");
+  grid.appendChild(el("div"));
+  for (const label of ["RGB", "NDVI", "NBR"]) grid.appendChild(el("div", "matrix-col-head", label));
+
+  for (const row of rows) {
+    const head = el("div", "matrix-row-head", row.label);
+    if (row.date) head.appendChild(el("span", "num", row.date));
+    grid.appendChild(head);
+    for (const suffix of ["rgb", "ndvi", "nbr"]) {
+      const key = row.prefix + "_" + suffix;
+      grid.appendChild(key in images ? buildPlate(key, images[key], { period: row.label }) : el("div"));
+    }
+  }
+
+  container.appendChild(grid);
+  $("empty-state").hidden = true;
+  container.hidden = false;
+}
+
+/* ----------------------------------------------------------------- lightbox */
+
+function openLightbox(sourceImg, title, note) {
+  $("lightbox-img").src = sourceImg.src;
+  $("lightbox-img").alt = title;
+  $("lightbox-title").textContent = title;
+  const size = sourceImg.naturalWidth
+    ? `${sourceImg.naturalWidth} × ${sourceImg.naturalHeight} px native`
+    : "";
+  $("lightbox-note").textContent = [note, size].filter(Boolean).join("  ·  ");
+  $("lightbox").showModal();
+}
+
+function setupLightbox() {
+  const dialog = $("lightbox");
+  $("lightbox-close").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+}
+
+/* ----------------------------------------------------------------- findings */
+
+function buildProbabilities(probabilities, predicted) {
+  const grid = el("div", "proba");
+  for (const key of ["0", "1", "2", "3"]) {
+    if (!(key in probabilities)) continue;
+    const p = probabilities[key];
+    const active = String(predicted) === key;
+
+    const row = el("div", "proba-key", "Level " + key);
+    const track = el("div", "proba-track");
+    const fill = el("div", "proba-fill");
+    fill.style.width = (p * 100).toFixed(1) + "%";
+    track.appendChild(fill);
+    const value = el("div", "proba-val", num(p, 2));
+
+    for (const cell of [row, track, value]) {
+      cell.dataset.sev = key;
+      if (active) cell.classList.add("proba-row-active");
+      grid.appendChild(cell);
+    }
+  }
+  return grid;
+}
+
+function metric(name, value, reading) {
+  const wrap = el("div", "metric");
+  const head = el("div", "metric-head");
+  head.appendChild(el("span", "metric-name", name));
+  head.appendChild(el("span", "metric-val", value));
+  wrap.appendChild(head);
+  if (reading) wrap.appendChild(el("div", "metric-read", reading));
+  return wrap;
+}
+
+function renderVerdict(data) {
+  /* An empty mask means the segmenter found nothing, so there is no burn to grade and the
+     severity classifier was never consulted (src/pipeline.py sets severity_basis). Showing a
+     number here would be inventing a verdict about a region nothing was detected in. */
+  const unassessed = data.severity_basis === "empty_mask";
+
+  const numeral = $("verdict-num");
+  numeral.textContent = unassessed ? EM_DASH : String(data.severity);
+  numeral.dataset.sev = unassessed ? "0" : String(data.severity);
+
+  const label = $("verdict-label");
+  label.textContent = unassessed ? "no burn pixels detected" : data.severity_label;
+  label.dataset.sev = unassessed ? "0" : String(data.severity);
+
+  $("verdict-area").textContent = num(data.stats.burned_fraction * 100, 1) + "%";
+
+  const proba = $("proba");
+  proba.textContent = "";
+  if (unassessed) {
+    proba.appendChild(el("p", "attr-note",
+      "Severity not assessed \u2014 the segmenter returned an empty mask, so there is no burned " +
+      "region to grade."));
+  } else {
+    proba.appendChild(buildProbabilities(data.probabilities, data.severity));
+  }
+
+  $("verdict-band").hidden = false;
+}
+
+function renderFindings(data) {
+  const stats = data.stats;
+  const container = $("findings");
+  container.textContent = "";
+
+  const metrics = el("div", "metrics");
+  metrics.classList.add("metrics-flush");
+
+  if (stats.dndvi !== null && stats.dndvi !== undefined) {
+    /* Thresholds and wording match render_human_readable() in src/pipeline.py. */
+    metrics.appendChild(metric(
+      "NDVI change",
+      signed(-stats.dndvi, 3),
+      `${num(stats.pre_ndvi_mean, 3)} → ${num(stats.post_ndvi_mean, 3)} · ` +
+      (stats.dndvi > 0.05 ? "consistent with vegetation loss" : "no strong signal")
+    ));
+    metrics.appendChild(metric(
+      "NBR change",
+      signed(-stats.dnbr, 3),
+      `${num(stats.pre_nbr_mean, 3)} → ${num(stats.post_nbr_mean, 3)} · ` +
+      (stats.dnbr > 0.1 ? "consistent with burn/vegetation loss" : "no strong burn signal")
+    ));
+  } else {
+    metrics.appendChild(metric("NDVI, post-event", num(stats.post_ndvi_mean, 3),
+      "No pre-event pass in local mode, so there is no change to report."));
+    metrics.appendChild(metric("NBR, post-event", num(stats.post_nbr_mean, 3), null));
+  }
+
+  if (stats.iou_vs_ground_truth !== null && stats.iou_vs_ground_truth !== undefined) {
+    metrics.appendChild(metric("IoU vs. ground truth", num(stats.iou_vs_ground_truth, 3),
+      "Overlap between the predicted mask and the labelled extent."));
+  }
+
+  /* Extent in real units, and where in the patch it sits. "2.1% of patch" alone invites
+     reading a hit 6 km away as a hit on the submitted point. */
+  metrics.appendChild(metric(
+    "Burn-affected extent",
+    `${num(stats.burned_area_ha, 0)} ha`,
+    `${stats.mask_pixels.toLocaleString()} px of a ${stats.patch_extent_km} km patch ` +
+    `at ${stats.pixel_size_m} m/px`
+  ));
+
+  if (data.mode === "gee") {
+    metrics.appendChild(metric(
+      "Distance from submitted point",
+      stats.nearest_mask_pixel_km === null || stats.nearest_mask_pixel_km === undefined
+        ? EM_DASH
+        : `${num(stats.nearest_mask_pixel_km, 2)} km`,
+      stats.nearest_mask_pixel_km === null || stats.nearest_mask_pixel_km === undefined
+        ? "No mask pixels to measure."
+        : `Nearest mask pixel; centroid ${num(stats.mask_centroid_offset_km, 2)} km away. ` +
+          "Detected burn anywhere in the patch is not necessarily burn at this coordinate."
+    ));
+  }
+
+  if (data.windows && data.windows.post_lag_days > 14) {
+    metrics.appendChild(metric(
+      "Post-event imagery lag",
+      `${data.windows.post_lag_days} d`,
+      "The post-event mosaic reaches this far past the given date. Burn scars in dry cropland " +
+      "can fade within weeks, so a clean result is weak evidence of no fire."
+    ));
+  }
+
+  container.appendChild(metrics);
+  $("findings-block").hidden = false;
+}
+
+/* -------------------------------------------------------------- attribution */
+
+function articleLinkLabel(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "link";
+  }
+}
+
+function buildArticleLinkCell(article) {
+  const cell = el("td");
+  const link = el("a", null, articleLinkLabel(article.url));
+  link.href = safeHref(article.url || "");
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  if (article.url) link.title = article.url;
+  cell.appendChild(link);
+  return cell;
+}
+
+function buildArticleRef(num) {
+  const a = el("a", "article-ref", `#${num}`);
+  a.href = `#article-${num}`;
+  return a;
+}
+
+/* One shared, numbered reference table (headline + link, each shown once) that the
+   per-verdict tables/lists below point back into by number — avoids repeating long
+   headlines/URLs in every verdict table, which is what made those unreadable. */
+function buildArticleIndexTable(articles) {
+  const table = el("table", "articles-table");
+  table.appendChild(el("caption", null, "Articles"));
+
+  const thead = el("thead");
+  const headRow = el("tr");
+  for (const label of ["#", "Headline", "Link"]) headRow.appendChild(el("th", null, label));
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  articles.forEach((article, i) => {
+    const row = el("tr");
+    row.id = `article-${i + 1}`;
+    row.appendChild(el("td", "article-num", `${i + 1}`));
+    row.appendChild(el("td", null, article.title || "(untitled)"));
+    row.appendChild(buildArticleLinkCell(article));
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+
+  const wrap = el("div", "articles-wrap");
+  wrap.appendChild(table);
+  return wrap;
+}
+
+/* yes/no mode has no per-article data beyond which bucket it landed in, so instead of a
+   table with nothing to show but a number, just list the reference numbers. */
+function buildYesNoResultsList(caption, startNum, count) {
+  const block = el("div", "results-block");
+  block.appendChild(el("p", "field-hint", caption));
+  const refs = el("div", "article-refs");
+  for (let i = 0; i < count; i++) refs.appendChild(buildArticleRef(startNum + i));
+  block.appendChild(refs);
+  return block;
+}
+
+/* Column widths as percentages, fixed via <colgroup> (paired with table-layout: fixed in
+   CSS) — without this, plain auto-layout gives the short yes/no/high columns as much room
+   as their header text needs and leaves Evidence quote, by far the longest content, squeezed
+   into whatever's left. */
+const STRUCTURED_RESULTS_COLUMNS = [
+  { label: "#", width: "4%" },
+  { label: "Conflict", width: "8%" },
+  { label: "Env. destruction", width: "16%" },
+  { label: "Deliberate", width: "10%" },
+  { label: "Actor", width: "12%" },
+  { label: "Confidence", width: "10%" },
+  { label: "Evidence quote", width: "40%" },
+];
+
+function buildStructuredResultsTable(caption, articles, startNum) {
+  const table = el("table", "articles-table structured-table");
+  table.appendChild(el("caption", null, caption));
+
+  const colgroup = el("colgroup");
+  for (const { width } of STRUCTURED_RESULTS_COLUMNS) {
+    const col = el("col");
+    col.style.width = width;
+    colgroup.appendChild(col);
+  }
+  table.appendChild(colgroup);
+
+  const thead = el("thead");
+  const headRow = el("tr");
+  for (const { label } of STRUCTURED_RESULTS_COLUMNS) headRow.appendChild(el("th", null, label));
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  articles.forEach((article, i) => {
+    const row = el("tr");
+    const numCell = el("td", "article-num");
+    numCell.appendChild(buildArticleRef(startNum + i));
+    row.appendChild(numCell);
+    row.appendChild(el("td", "value-cell", article.conflict_activity ?? "—"));
+    row.appendChild(el("td", "value-cell", article.environmental_destruction ?? "—"));
+    row.appendChild(el("td", "value-cell", article.deliberate ?? "—"));
+    row.appendChild(el("td", "actor-cell", article.actor_claimed ?? "—"));
+    row.appendChild(el("td", "value-cell", article.confidence ?? "—"));
+    row.appendChild(el("td", "evidence-quote", article.evidence_quote || "—"));
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+
+  const wrap = el("div", "articles-wrap");
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function renderAttribution(attribution) {
+  const container = $("attribution");
+  container.textContent = "";
+  container.appendChild(el("p", "attr-note", attribution.note));
+
+  const yesList = attribution.yes_list || [];
+  const noList = attribution.no_list || [];
+
+  if (attribution.score !== null && attribution.score !== undefined && attribution.num_articles > 0) {
+    const yes = yesList.length;
+    const total = attribution.num_articles;
+    const bar = el("div", "attr-bar");
+    const yesBar = el("span", "attr-yes");
+    yesBar.style.width = (100 * yes / total).toFixed(1) + "%";
+    const noBar = el("span", "attr-no");
+    noBar.style.width = (100 * (total - yes) / total).toFixed(1) + "%";
+    bar.append(yesBar, noBar);
+    container.appendChild(bar);
+
+    const counts = el("div", "attr-counts");
+    counts.appendChild(el("span", null, `${yes} supporting`));
+    counts.appendChild(el("span", null, `${total - yes} opposing`));
+    if (attribution.num_duplicates_removed) {
+      counts.appendChild(el("span", null, `${attribution.num_duplicates_removed} duplicates collapsed`));
+    }
+    container.appendChild(counts);
+  }
+
+  /* Supporting articles get numbers 1..yesList.length, opposing continue right after —
+     matching the order they're listed in the index table below. */
+  const allArticles = [...yesList, ...noList];
+  if (allArticles.length) container.appendChild(buildArticleIndexTable(allArticles));
+
+  const results = el("div", "tables");
+  if (attribution.mode === "structured") {
+    if (yesList.length) results.appendChild(buildStructuredResultsTable("Supporting articles", yesList, 1));
+    if (noList.length) results.appendChild(buildStructuredResultsTable("Opposing articles", noList, yesList.length + 1));
+  } else {
+    if (yesList.length) results.appendChild(buildYesNoResultsList("Supporting articles", 1, yesList.length));
+    if (noList.length) results.appendChild(buildYesNoResultsList("Opposing articles", yesList.length + 1, noList.length));
+  }
+  if (results.childElementCount) container.appendChild(results);
+
+  $("attr-section").hidden = false;
+}
+
+/** Blank every result surface. Called before a run and on failure, so a failed submission can
+    never leave the previous site's verdict, plates and articles on screen to be read as this
+    one's. */
+function clearResults() {
+  $("verdict-band").hidden = true;
+  $("findings-block").hidden = true;
+  $("attr-section").hidden = true;
+  $("plates").hidden = true;
+  $("raw-report").hidden = true;
+  $("plates").textContent = "";
+  $("findings").textContent = "";
+  $("attribution").textContent = "";
+  $("proba").textContent = "";
+  $("summary").textContent = "";
+  $("verdict-num").textContent = EM_DASH;
+  $("verdict-label").textContent = "";
+  $("verdict-area").textContent = EM_DASH;
+  plateImages.length = 0;
+}
+
+/* --------------------------------------------------------- status and errors */
+
+function clearAlert() { $("alert-slot").textContent = ""; }
+
+/* Matched against the server's own message text, so the patterns quote it rather
+   than guessing: gee_client.py raises "No Sentinel-2 scenes found for AOI between
+   ..." and "GEE_PROJECT is not set...". Deliberately narrow -- a loose /no.*scene/
+   also swallowed this page's own "No scene selected" and answered it with advice
+   about cloud-free passes. */
+const ERROR_HINTS = [
+  [/GEE_PROJECT/i, "Set GEE_PROJECT in .env, then restart the server."],
+  [/WORLD_NEWS_API_KEY|GEMINI_API_KEY/i, "Set the missing API key in .env, then restart the server."],
+  [/\b402\b|quota/i, "The World News API daily quota is exhausted. Attribution stays partial until it resets."],
+  [/No Sentinel-2 scenes found/i, "No usable pass in the \u221230/+21 day window. Try an event date nearer a clear overpass, or another location."],
+  [/requires all of lat, lon/i, "Fill in latitude, longitude and event date."],
+];
+
+function showAlert(message) {
+  const slot = $("alert-slot");
+  slot.textContent = "";
+  const box = el("div", "alert");
+  box.setAttribute("role", "alert");
+  box.appendChild(el("h3", null, "Run failed"));
+  box.appendChild(el("p", null, message));
+  const hint = ERROR_HINTS.find(([pattern]) => pattern.test(message));
+  if (hint) box.appendChild(el("p", "hint", hint[1]));
+  slot.appendChild(box);
+}
+
+function startStatus() {
+  const started = Date.now();
+  const statusEl = $("status");
+  statusEl.textContent = "";
+  const spinner = el("span", "spinner");
+  spinner.setAttribute("aria-hidden", "true");
+  const text = el("span", null, "Running… 0s");
+  statusEl.append(spinner, text);
+  timerId = window.setInterval(() => {
+    const seconds = Math.round((Date.now() - started) / 1000);
+    text.textContent = `Running… ${seconds}s` + (hasRun ? "" : "  (first run also loads both models)");
+  }, 1000);
+}
+
+function stopStatus(message) {
+  if (timerId !== null) { window.clearInterval(timerId); timerId = null; }
+  $("status").textContent = message || "";
+}
+
+/* -------------------------------------------------------------- input checks */
+
+function setFieldError(inputId, errorId, message) {
+  $(errorId).textContent = message || "";
+  $(inputId).setAttribute("aria-invalid", message ? "true" : "false");
+  return !message;
+}
+
+function readGeeInput() {
+  const lat = parseFloat($("lat").value);
+  const lon = parseFloat($("lon").value);
+  const eventDate = $("event_date").value.trim();
+
+  let ok = setFieldError("lat", "err-lat",
+    Number.isFinite(lat) && lat >= -90 && lat <= 90 ? null : "Latitude must be between −90 and 90.");
+  ok = setFieldError("lon", "err-lon",
+    Number.isFinite(lon) && lon >= -180 && lon <= 180 ? null : "Longitude must be between −180 and 180.") && ok;
+  ok = setFieldError("event_date", "err-date",
+    /^\d{4}-\d{2}-\d{2}$/.test(eventDate) ? null : "Use YYYY-MM-DD.") && ok;
+
+  /* No tags / blank prompt means "use the server's own default" -- send null rather
+     than an empty override to worldnews_client.search_articles / gemini_client. */
+  const keywords = keywordTags.length ? keywordTags.join(" OR ") : null;
+  const domainPrompt = $("domain_prompt").value.trim() || null;
+  const outputContract = currentAttributionMode === "structured" ? ($("output_contract").value.trim() || null) : null;
+  const radiusRaw = parseInt($("news_radius_km").value, 10);
+  const newsRadiusKm = Number.isFinite(radiusRaw) && radiusRaw > 0 ? radiusRaw : null;
+
+  return ok ? {
+    lat, lon, event_date: eventDate, keywords, news_radius_km: newsRadiusKm,
+    attribution_mode: currentAttributionMode, domain_prompt: domainPrompt, output_contract: outputContract,
+  } : null;
+}
+
+function setInputsDisabled(disabled) {
+  for (const id of [
+    "lat", "lon", "event_date", "keyword-input", "keyword-add",
+    "attribution_mode", "domain_prompt", "news_radius_km", "file",
+    "tab-gee", "tab-local", "reset-sample", "reset-attribution",
+  ]) {
+    $(id).disabled = disabled;
+  }
+  /* output_contract has its own disabled state driven by the selected mode (see
+     applyAttributionModeDefaults) -- only forcibly disable it, never re-enable it here. */
+  if (disabled) $("output_contract").disabled = true;
+  else $("output_contract").disabled = currentAttributionMode !== "structured";
+  $("run").disabled = disabled;
+}
+
+/* ---------------------------------------------------------------- the run */
+
+async function runPipeline() {
+  clearAlert();
+  let request;
+
+  if (activeTab === "gee") {
+    const body = readGeeInput();
+    if (!body) return;
+    request = fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } else {
+    const fileInput = $("file");
+    if (!fileInput.files.length) {
+      showAlert("No scene selected. Choose a six-band *_merged.tif to run in local mode.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    request = fetch("/api/run_local", { method: "POST", body: formData });
+  }
+
+  setInputsDisabled(true);
+  clearResults();
+  setRailRunning();
+  startStatus();
+
+  try {
+    const response = await request;
+    /* Read as text and parse defensively: a failing hop in front of the app (a gateway timeout
+       on the Space, a proxy error page) answers with HTML, and response.json() on that throws a
+       raw `Unexpected token '<'` that tells the user nothing. Status first, body second. */
+    const body = await response.text();
+    let data = null;
+    try {
+      data = JSON.parse(body);
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      /* HTTPException gives a string; FastAPI's own 422 gives a list of field errors. A
+         non-JSON body means the error came from in front of the app, not from it. */
+      const detail = data ? data.detail : null;
+      throw new Error(
+        typeof detail === "string" ? detail
+          : detail ? JSON.stringify(detail)
+          : `The server returned HTTP ${response.status}${response.statusText ? " " + response.statusText : ""}.`
+      );
+    }
+    if (data === null) {
+      throw new Error(
+        `The server returned HTTP ${response.status} with a response that was not JSON. ` +
+        "The request may have timed out at a proxy before reaching the pipeline — try again."
+      );
+    }
+
+    runCount += 1;
+    stopStatus("");
+    setMarksFromResult(data);
+    fillRail(data);
+    renderVerdict(data);
+    renderPlates(data);
+    renderFindings(data);
+    renderAttribution(data.attribution);
+    $("summary").textContent = data.human_readable;
+    $("raw-report").hidden = false;
+    hasRun = true;
+  } catch (err) {
+    stopStatus("");
+    clearResults();
+    setRailIdle();
+    hasRun = false;
+    showAlert(err.message);
+  } finally {
+    setInputsDisabled(false);
+  }
+}
+
+/* ---------------------------------------------------------------------- init */
+
+function init() {
+  setupTabs();
+  setupLightbox();
+
+  $("run").addEventListener("click", runPipeline);
+
+  $("reset-sample").addEventListener("click", () => {
+    $("lat").value = SAMPLE.lat;
+    $("lon").value = SAMPLE.lon;
+    $("event_date").value = SAMPLE.event_date;
+    for (const [inputId, errorId] of [["lat", "err-lat"], ["lon", "err-lon"], ["event_date", "err-date"]]) {
+      setFieldError(inputId, errorId, null);
+    }
+    if (!hasRun) syncMarksFromInputs();
+  });
+
+  for (const id of ["lat", "lon", "event_date"]) {
+    $(id).addEventListener("input", () => { if (!hasRun) syncMarksFromInputs(); });
+  }
+
+  $("keyword-add").addEventListener("click", addKeywordsFromInput);
+  $("keyword-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === ",") {
+      event.preventDefault();
+      addKeywordsFromInput();
+    }
+  });
+
+  $("attribution_mode").addEventListener("change", (event) => {
+    currentAttributionMode = event.target.value;
+    applyAttributionModeDefaults(currentAttributionMode);
+  });
+
+  $("reset-attribution").addEventListener("click", () => {
+    if (!attributionDefaults) return;
+    keywordTags = attributionDefaults.keywords.split(" OR ").map((t) => t.trim()).filter(Boolean);
+    renderKeywordTags();
+    $("news_radius_km").value = "";
+    applyAttributionModeDefaults(currentAttributionMode);
+  });
+
+  $("file").addEventListener("change", () => {
+    const file = $("file").files[0];
+    $("file-meta").textContent = file ? `${file.name}  ·  ${formatBytes(file.size)}` : "";
+    if (!hasRun) syncMarksFromInputs();
+  });
+
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(refreshUpscaleFlags, 150);
+  });
+
+  $("copy-report").addEventListener("click", async () => {
+    const button = $("copy-report");
+    try {
+      await navigator.clipboard.writeText($("summary").textContent);
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Copy blocked — select the text instead";
+    }
+    window.setTimeout(() => { button.textContent = "Copy report"; }, 2500);
+  });
+
+  syncMarksFromInputs();
+  loadAttributionDefaults();
+}
+
+init();
+</script>
+</body>
+</html>

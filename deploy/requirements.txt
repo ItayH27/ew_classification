@@ -1,0 +1,23 @@
+# Runtime-only dependencies for the Hugging Face Space (see deploy/README.md).
+# Training deps (geemap, accelerate, tqdm) are deliberately left out.
+# Pins need Python >=3.11 (e.g. numpy 2.4); the Space defaults to 3.10, so deploy/README.md sets
+# python_version: "3.12" (ZeroGPU supports 3.10 and 3.12, not 3.11).
+# torch: plain PyPI wheel, no +cu124 / extra index — ZeroGPU validates the torch version at
+# startup and supplies CUDA itself. It only accepts 2.8.0+ (checked 2026-09), so this is newer
+# than the 2.6.0 the model was trained with — verified to give identical local-mode results.
+torch==2.8.0
+diffusers==0.39.0
+numpy==2.4.6
+rasterio==1.4.4
+# Must match the version model.joblib was pickled with (severity checkpoint).
+scikit-learn==1.9.0
+joblib==1.5.3
+matplotlib==3.11.0
+earthengine-api==1.7.33
+google-genai==2.17.0
+requests==2.34.2
+python-dotenv==1.2.2
+python-multipart==0.0.32
+# gradio / spaces / fastapi / huggingface_hub are left to the Space's gradio SDK to resolve,
+# since gradio pins compatible fastapi and huggingface_hub versions itself.
+spaces

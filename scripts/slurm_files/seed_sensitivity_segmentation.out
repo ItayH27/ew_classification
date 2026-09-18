@@ -1,0 +1,163 @@
+Fixed config: alpha=0.3, pos_weight=7.0, batch_size=2, accumulation_steps=4, negative_dir=/home/yandex/DLWorkShop2026b/itayhazan/ew_classifier/dataset/negative, negative_fraction=0.2, epochs=15
+Seeds: [7, 42, 67, 69, 420]
+
+=== Seed 7 ===
+Device: cuda  |  AMP: True
+Epoch   1/15 | train_loss=0.6947 | val_loss=0.5507 | val_iou=0.5169 | val_dice=0.6240 | val_fpr=0.0776 | val_fnr=0.1353
+  --> New best val IoU 0.5169 — checkpoint saved.
+Epoch   2/15 | train_loss=0.5451 | val_loss=0.4566 | val_iou=0.4798 | val_dice=0.5922 | val_fpr=0.0896 | val_fnr=0.0940
+Epoch   3/15 | train_loss=0.4640 | val_loss=0.4065 | val_iou=0.5409 | val_dice=0.6458 | val_fpr=0.0460 | val_fnr=0.1172
+  --> New best val IoU 0.5409 — checkpoint saved.
+Epoch   4/15 | train_loss=0.4365 | val_loss=0.3519 | val_iou=0.6196 | val_dice=0.7130 | val_fpr=0.0423 | val_fnr=0.1710
+  --> New best val IoU 0.6196 — checkpoint saved.
+Epoch   5/15 | train_loss=0.3909 | val_loss=0.3699 | val_iou=0.6193 | val_dice=0.7082 | val_fpr=0.0260 | val_fnr=0.2032
+Epoch   6/15 | train_loss=0.3890 | val_loss=0.3130 | val_iou=0.6365 | val_dice=0.7223 | val_fpr=0.0412 | val_fnr=0.1652
+  --> New best val IoU 0.6365 — checkpoint saved.
+Epoch   7/15 | train_loss=0.3658 | val_loss=0.3276 | val_iou=0.6500 | val_dice=0.7360 | val_fpr=0.0212 | val_fnr=0.1618
+  --> New best val IoU 0.6500 — checkpoint saved.
+Epoch   8/15 | train_loss=0.3839 | val_loss=0.3061 | val_iou=0.6397 | val_dice=0.7311 | val_fpr=0.0359 | val_fnr=0.1236
+Epoch   9/15 | train_loss=0.3336 | val_loss=0.3112 | val_iou=0.6410 | val_dice=0.7294 | val_fpr=0.0540 | val_fnr=0.1620
+Epoch  10/15 | train_loss=0.3446 | val_loss=0.2706 | val_iou=0.6874 | val_dice=0.7706 | val_fpr=0.0198 | val_fnr=0.1209
+  --> New best val IoU 0.6874 — checkpoint saved.
+Epoch  11/15 | train_loss=0.3098 | val_loss=0.2651 | val_iou=0.6596 | val_dice=0.7501 | val_fpr=0.0375 | val_fnr=0.0722
+Epoch  12/15 | train_loss=0.3469 | val_loss=0.3068 | val_iou=0.6805 | val_dice=0.7678 | val_fpr=0.0252 | val_fnr=0.1580
+Epoch  13/15 | train_loss=0.2888 | val_loss=0.2584 | val_iou=0.6968 | val_dice=0.7778 | val_fpr=0.0188 | val_fnr=0.1282
+  --> New best val IoU 0.6968 — checkpoint saved.
+Epoch  14/15 | train_loss=0.2881 | val_loss=0.2609 | val_iou=0.7034 | val_dice=0.7842 | val_fpr=0.0286 | val_fnr=0.1374
+  --> New best val IoU 0.7034 — checkpoint saved.
+Epoch  15/15 | train_loss=0.2913 | val_loss=0.2434 | val_iou=0.7040 | val_dice=0.7831 | val_fpr=0.0194 | val_fnr=0.1279
+  --> New best val IoU 0.7040 — checkpoint saved.
+Total training time: 0:23:48
+--> seed=7: val_iou=0.7040 val_dice=0.7831 val_fpr=0.0194 val_fnr=0.1279 (1428s)
+
+=== Seed 42 ===
+Device: cuda  |  AMP: True
+Epoch   1/15 | train_loss=0.6846 | val_loss=0.5452 | val_iou=0.5685 | val_dice=0.6695 | val_fpr=0.0271 | val_fnr=0.1816
+  --> New best val IoU 0.5685 — checkpoint saved.
+Epoch   2/15 | train_loss=0.5104 | val_loss=0.4645 | val_iou=0.5544 | val_dice=0.6627 | val_fpr=0.0286 | val_fnr=0.1321
+Epoch   3/15 | train_loss=0.4820 | val_loss=0.3948 | val_iou=0.6031 | val_dice=0.7005 | val_fpr=0.0288 | val_fnr=0.1484
+  --> New best val IoU 0.6031 — checkpoint saved.
+Epoch   4/15 | train_loss=0.4373 | val_loss=0.3972 | val_iou=0.6048 | val_dice=0.6997 | val_fpr=0.0260 | val_fnr=0.1543
+  --> New best val IoU 0.6048 — checkpoint saved.
+Epoch   5/15 | train_loss=0.3890 | val_loss=0.3207 | val_iou=0.6188 | val_dice=0.7143 | val_fpr=0.0482 | val_fnr=0.1452
+  --> New best val IoU 0.6188 — checkpoint saved.
+Epoch   6/15 | train_loss=0.4676 | val_loss=0.3709 | val_iou=0.5966 | val_dice=0.6951 | val_fpr=0.0368 | val_fnr=0.1375
+Epoch   7/15 | train_loss=0.3673 | val_loss=0.3223 | val_iou=0.6097 | val_dice=0.7050 | val_fpr=0.0426 | val_fnr=0.1148
+Epoch   8/15 | train_loss=0.3295 | val_loss=0.3358 | val_iou=0.6354 | val_dice=0.7226 | val_fpr=0.0260 | val_fnr=0.1665
+  --> New best val IoU 0.6354 — checkpoint saved.
+Epoch   9/15 | train_loss=0.3616 | val_loss=0.3096 | val_iou=0.6258 | val_dice=0.7148 | val_fpr=0.0453 | val_fnr=0.1406
+Epoch  10/15 | train_loss=0.3725 | val_loss=0.3480 | val_iou=0.5654 | val_dice=0.6697 | val_fpr=0.0889 | val_fnr=0.0755
+Epoch  11/15 | train_loss=0.3431 | val_loss=0.3184 | val_iou=0.6370 | val_dice=0.7283 | val_fpr=0.0254 | val_fnr=0.1032
+  --> New best val IoU 0.6370 — checkpoint saved.
+Epoch  12/15 | train_loss=0.3335 | val_loss=0.3145 | val_iou=0.6660 | val_dice=0.7495 | val_fpr=0.0360 | val_fnr=0.1559
+  --> New best val IoU 0.6660 — checkpoint saved.
+Epoch  13/15 | train_loss=0.3124 | val_loss=0.3000 | val_iou=0.6594 | val_dice=0.7475 | val_fpr=0.0316 | val_fnr=0.1137
+Epoch  14/15 | train_loss=0.3258 | val_loss=0.2912 | val_iou=0.6787 | val_dice=0.7627 | val_fpr=0.0193 | val_fnr=0.1205
+  --> New best val IoU 0.6787 — checkpoint saved.
+Epoch  15/15 | train_loss=0.2876 | val_loss=0.2874 | val_iou=0.7084 | val_dice=0.7889 | val_fpr=0.0327 | val_fnr=0.1329
+  --> New best val IoU 0.7084 — checkpoint saved.
+Total training time: 0:23:33
+--> seed=42: val_iou=0.7084 val_dice=0.7889 val_fpr=0.0327 val_fnr=0.1329 (1413s)
+
+=== Seed 67 ===
+Device: cuda  |  AMP: True
+Epoch   1/15 | train_loss=0.7297 | val_loss=0.5762 | val_iou=0.5335 | val_dice=0.6415 | val_fpr=0.0442 | val_fnr=0.1426
+  --> New best val IoU 0.5335 — checkpoint saved.
+Epoch   2/15 | train_loss=0.5422 | val_loss=0.4403 | val_iou=0.5629 | val_dice=0.6681 | val_fpr=0.0521 | val_fnr=0.1466
+  --> New best val IoU 0.5629 — checkpoint saved.
+Epoch   3/15 | train_loss=0.4470 | val_loss=0.3932 | val_iou=0.6104 | val_dice=0.7042 | val_fpr=0.0252 | val_fnr=0.1799
+  --> New best val IoU 0.6104 — checkpoint saved.
+Epoch   4/15 | train_loss=0.4107 | val_loss=0.3634 | val_iou=0.6061 | val_dice=0.7026 | val_fpr=0.0297 | val_fnr=0.1730
+Epoch   5/15 | train_loss=0.3968 | val_loss=0.3638 | val_iou=0.5656 | val_dice=0.6671 | val_fpr=0.0430 | val_fnr=0.0968
+Epoch   6/15 | train_loss=0.3828 | val_loss=0.3389 | val_iou=0.5956 | val_dice=0.6913 | val_fpr=0.0841 | val_fnr=0.1226
+Epoch   7/15 | train_loss=0.3767 | val_loss=0.3161 | val_iou=0.6309 | val_dice=0.7228 | val_fpr=0.0258 | val_fnr=0.1187
+  --> New best val IoU 0.6309 — checkpoint saved.
+Epoch   8/15 | train_loss=0.3381 | val_loss=0.3355 | val_iou=0.6302 | val_dice=0.7213 | val_fpr=0.0386 | val_fnr=0.1373
+Epoch   9/15 | train_loss=0.3404 | val_loss=0.2992 | val_iou=0.6643 | val_dice=0.7506 | val_fpr=0.0323 | val_fnr=0.1483
+  --> New best val IoU 0.6643 — checkpoint saved.
+Epoch  10/15 | train_loss=0.3130 | val_loss=0.2953 | val_iou=0.6721 | val_dice=0.7575 | val_fpr=0.0284 | val_fnr=0.1339
+  --> New best val IoU 0.6721 — checkpoint saved.
+Epoch  11/15 | train_loss=0.3156 | val_loss=0.2957 | val_iou=0.6948 | val_dice=0.7776 | val_fpr=0.0156 | val_fnr=0.1361
+  --> New best val IoU 0.6948 — checkpoint saved.
+Epoch  12/15 | train_loss=0.3118 | val_loss=0.2864 | val_iou=0.6530 | val_dice=0.7463 | val_fpr=0.0728 | val_fnr=0.0896
+Epoch  13/15 | train_loss=0.3039 | val_loss=0.2745 | val_iou=0.7004 | val_dice=0.7850 | val_fpr=0.0423 | val_fnr=0.1112
+  --> New best val IoU 0.7004 — checkpoint saved.
+Epoch  14/15 | train_loss=0.3283 | val_loss=0.2562 | val_iou=0.6826 | val_dice=0.7654 | val_fpr=0.0301 | val_fnr=0.1203
+Epoch  15/15 | train_loss=0.3022 | val_loss=0.2719 | val_iou=0.6840 | val_dice=0.7737 | val_fpr=0.0493 | val_fnr=0.1090
+Total training time: 0:23:36
+--> seed=67: val_iou=0.7004 val_dice=0.7850 val_fpr=0.0423 val_fnr=0.1112 (1416s)
+
+=== Seed 69 ===
+Device: cuda  |  AMP: True
+Epoch   1/15 | train_loss=0.6987 | val_loss=0.5830 | val_iou=0.5023 | val_dice=0.6064 | val_fpr=0.0920 | val_fnr=0.1771
+  --> New best val IoU 0.5023 — checkpoint saved.
+Epoch   2/15 | train_loss=0.5228 | val_loss=0.4266 | val_iou=0.5678 | val_dice=0.6703 | val_fpr=0.0448 | val_fnr=0.1631
+  --> New best val IoU 0.5678 — checkpoint saved.
+Epoch   3/15 | train_loss=0.4828 | val_loss=0.3903 | val_iou=0.5770 | val_dice=0.6785 | val_fpr=0.0322 | val_fnr=0.1381
+  --> New best val IoU 0.5770 — checkpoint saved.
+Epoch   4/15 | train_loss=0.4227 | val_loss=0.3915 | val_iou=0.5913 | val_dice=0.6876 | val_fpr=0.0295 | val_fnr=0.1935
+  --> New best val IoU 0.5913 — checkpoint saved.
+Epoch   5/15 | train_loss=0.3826 | val_loss=0.3868 | val_iou=0.5210 | val_dice=0.6308 | val_fpr=0.0565 | val_fnr=0.0715
+Epoch   6/15 | train_loss=0.4258 | val_loss=0.3465 | val_iou=0.6046 | val_dice=0.6999 | val_fpr=0.0438 | val_fnr=0.1521
+  --> New best val IoU 0.6046 — checkpoint saved.
+Epoch   7/15 | train_loss=0.3566 | val_loss=0.3464 | val_iou=0.6063 | val_dice=0.6992 | val_fpr=0.0363 | val_fnr=0.1715
+  --> New best val IoU 0.6063 — checkpoint saved.
+Epoch   8/15 | train_loss=0.3429 | val_loss=0.3198 | val_iou=0.6363 | val_dice=0.7219 | val_fpr=0.0330 | val_fnr=0.1841
+  --> New best val IoU 0.6363 — checkpoint saved.
+Epoch   9/15 | train_loss=0.3393 | val_loss=0.2936 | val_iou=0.6606 | val_dice=0.7468 | val_fpr=0.0382 | val_fnr=0.1619
+  --> New best val IoU 0.6606 — checkpoint saved.
+Epoch  10/15 | train_loss=0.3620 | val_loss=0.3327 | val_iou=0.6459 | val_dice=0.7366 | val_fpr=0.0276 | val_fnr=0.1917
+Epoch  11/15 | train_loss=0.3419 | val_loss=0.2790 | val_iou=0.6570 | val_dice=0.7456 | val_fpr=0.0283 | val_fnr=0.0975
+Epoch  12/15 | train_loss=0.3288 | val_loss=0.2768 | val_iou=0.6702 | val_dice=0.7581 | val_fpr=0.0289 | val_fnr=0.1281
+  --> New best val IoU 0.6702 — checkpoint saved.
+Epoch  13/15 | train_loss=0.3130 | val_loss=0.2599 | val_iou=0.6786 | val_dice=0.7678 | val_fpr=0.0369 | val_fnr=0.0837
+  --> New best val IoU 0.6786 — checkpoint saved.
+Epoch  14/15 | train_loss=0.2744 | val_loss=0.2662 | val_iou=0.6910 | val_dice=0.7786 | val_fpr=0.0342 | val_fnr=0.1024
+  --> New best val IoU 0.6910 — checkpoint saved.
+Epoch  15/15 | train_loss=0.3203 | val_loss=0.2400 | val_iou=0.6823 | val_dice=0.7697 | val_fpr=0.0408 | val_fnr=0.0815
+Total training time: 0:23:53
+--> seed=69: val_iou=0.6910 val_dice=0.7786 val_fpr=0.0342 val_fnr=0.1024 (1433s)
+
+=== Seed 420 ===
+Device: cuda  |  AMP: True
+Epoch   1/15 | train_loss=0.7257 | val_loss=0.5831 | val_iou=0.4840 | val_dice=0.5957 | val_fpr=0.0440 | val_fnr=0.1518
+  --> New best val IoU 0.4840 — checkpoint saved.
+Epoch   2/15 | train_loss=0.5359 | val_loss=0.4211 | val_iou=0.5249 | val_dice=0.6394 | val_fpr=0.0726 | val_fnr=0.0979
+  --> New best val IoU 0.5249 — checkpoint saved.
+Epoch   3/15 | train_loss=0.4967 | val_loss=0.4791 | val_iou=0.5843 | val_dice=0.6797 | val_fpr=0.0304 | val_fnr=0.2095
+  --> New best val IoU 0.5843 — checkpoint saved.
+Epoch   4/15 | train_loss=0.4258 | val_loss=0.4040 | val_iou=0.6243 | val_dice=0.7206 | val_fpr=0.0265 | val_fnr=0.1793
+  --> New best val IoU 0.6243 — checkpoint saved.
+Epoch   5/15 | train_loss=0.3759 | val_loss=0.3251 | val_iou=0.6049 | val_dice=0.7054 | val_fpr=0.0372 | val_fnr=0.1010
+Epoch   6/15 | train_loss=0.3784 | val_loss=0.3703 | val_iou=0.6269 | val_dice=0.7234 | val_fpr=0.0265 | val_fnr=0.1933
+  --> New best val IoU 0.6269 — checkpoint saved.
+Epoch   7/15 | train_loss=0.4050 | val_loss=0.4583 | val_iou=0.5903 | val_dice=0.6839 | val_fpr=0.0214 | val_fnr=0.2851
+Epoch   8/15 | train_loss=0.4123 | val_loss=0.3488 | val_iou=0.6044 | val_dice=0.6980 | val_fpr=0.0574 | val_fnr=0.1610
+Epoch   9/15 | train_loss=0.3658 | val_loss=0.3136 | val_iou=0.6402 | val_dice=0.7301 | val_fpr=0.0247 | val_fnr=0.1639
+  --> New best val IoU 0.6402 — checkpoint saved.
+Epoch  10/15 | train_loss=0.3686 | val_loss=0.3252 | val_iou=0.6473 | val_dice=0.7384 | val_fpr=0.0191 | val_fnr=0.1503
+  --> New best val IoU 0.6473 — checkpoint saved.
+Epoch  11/15 | train_loss=0.3709 | val_loss=0.3125 | val_iou=0.6270 | val_dice=0.7236 | val_fpr=0.0301 | val_fnr=0.1034
+Epoch  12/15 | train_loss=0.3044 | val_loss=0.2520 | val_iou=0.6823 | val_dice=0.7707 | val_fpr=0.0468 | val_fnr=0.0915
+  --> New best val IoU 0.6823 — checkpoint saved.
+Epoch  13/15 | train_loss=0.2847 | val_loss=0.2797 | val_iou=0.6915 | val_dice=0.7729 | val_fpr=0.0155 | val_fnr=0.1340
+  --> New best val IoU 0.6915 — checkpoint saved.
+Epoch  14/15 | train_loss=0.3118 | val_loss=0.2372 | val_iou=0.6889 | val_dice=0.7728 | val_fpr=0.0276 | val_fnr=0.0925
+Epoch  15/15 | train_loss=0.2878 | val_loss=0.2563 | val_iou=0.6884 | val_dice=0.7688 | val_fpr=0.0243 | val_fnr=0.1175
+Total training time: 0:23:02
+--> seed=420: val_iou=0.6915 val_dice=0.7729 val_fpr=0.0155 val_fnr=0.1340 (1382s)
+
+Sweep complete. Summary: /home/yandex/DLWorkShop2026b/itayhazan/ew_classifier/checkpoints/segmentation_seed_sensitivity/summary.csv
+seed,epochs,best_val_iou,best_val_dice,best_val_fpr,best_val_fnr,elapsed_seconds
+7,15,0.7040275187991637,0.7831067109048704,0.019446147325321694,0.1279256533104644,1428
+42,15,0.708427522218509,0.7888694477108291,0.03269730688955887,0.13289510017387907,1413
+67,15,0.7003762944468309,0.78499207614169,0.04230519857266647,0.111246053392251,1416
+69,15,0.6909750828884872,0.7785854496622593,0.03418220131608358,0.10238770008877371,1433
+420,15,0.6915078799291802,0.7729111212200929,0.015530666969578152,0.13404168601317162,1382
+
+Seed sensitivity (across 5 seeds):
+  best_val_iou: mean=0.6991  stdev=0.0069  min=0.6910  max=0.7084  range=0.0175
+  best_val_dice: mean=0.7817  stdev=0.0055  min=0.7729  max=0.7889  range=0.0160
+  best_val_fpr: mean=0.0288  stdev=0.0099  min=0.0155  max=0.0423  range=0.0268
+  best_val_fnr: mean=0.1217  stdev=0.0126  min=0.1024  max=0.1340  range=0.0317
+Done.

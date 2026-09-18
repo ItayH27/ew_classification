@@ -1,0 +1,16 @@
+
+.env
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+.idea/
+.vscode/
+*.pyc
+ew-classifier-sa.json
+*.png
+*.pdf
+checkpoints/
+dataset/
+.cache/
+.space_build/

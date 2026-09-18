@@ -1,0 +1,15 @@
+Loaded 270 labeled samples. Class distribution: {0: 70, 1: 76, 2: 80, 3: 44}
+CV (k=5) accuracy: 0.822 ± 0.049
+CV macro-F1: 0.826 ± 0.048
+CV MAE (ordinal): 0.185
+Confusion matrix:
+[[70  0  0  0]
+ [ 9 45 21  1]
+ [ 0  9 69  2]
+ [ 0  1  5 38]]
+CV FPR per class: {0: 0.045, 1: 0.05154639175257732, 2: 0.1368421052631579, 3: 0.01327433628318584} (mean 0.062)
+CV FNR per class: {0: 0.0, 1: 0.40789473684210525, 2: 0.1375, 3: 0.13636363636363635} (mean 0.170)
+Refitting final model on all labeled samples...
+Saved final model to /home/yandex/DLWorkShop2026b/itayhazan/ew_classifier/checkpoints/severity/model.joblib
+Total training time: 0:02:15
+Done.
